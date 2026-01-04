@@ -222,6 +222,9 @@ llama_build_and_test(test-backend-ops.cpp)
 llama_build_and_test(test-model-load-cancel.cpp  LABEL "model")
 llama_build_and_test(test-autorelease.cpp        LABEL "model")
 
+# vec-lut-specific tests
+llama_build_and_test(test-vlut-gemm.cpp)
+
 # Test for state restore with fragmented KV cache
 # Requires a model, uses same args pattern as test-thread-safety
 if (NOT ${CMAKE_SYSTEM_PROCESSOR} MATCHES "s390x")
