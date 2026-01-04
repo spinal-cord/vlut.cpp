@@ -196,6 +196,8 @@ add_library(ggml-base
             ../include/ggml-cpp.h
             ../include/ggml-opt.h
             ../include/gguf.h
+            ggml-quants-vlut.c
+            ggml-quants-vlut.h
             ggml.c
             ggml.cpp
             ggml-alloc.c
