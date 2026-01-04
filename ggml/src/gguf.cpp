@@ -577,7 +577,8 @@ struct gguf_context * gguf_init_from_file_impl(FILE * file, struct gguf_init_par
             const int64_t blck_size = ggml_blck_size(info.t.type);
 
             // check that row size is divisible by block size
-            if (blck_size == 0 || info.t.ne[0] % blck_size != 0) {
+            if (info.t.type != GGML_TYPE_I1_V && info.t.type != GGML_TYPE_I1_V_2 && info.t.type != GGML_TYPE_I1_V_4 &&
+                (blck_size == 0 || info.t.ne[0] % blck_size != 0)) {
                 GGML_LOG_ERROR("%s: tensor '%s' of type %d (%s) has %" PRId64 " elements per row, "
                     "not a multiple of block size (%" PRId64 ")\n",
                     __func__, info.t.name, (int) info.t.type, ggml_type_name(info.t.type), info.t.ne[0], blck_size);
