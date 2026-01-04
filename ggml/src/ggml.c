@@ -1,6 +1,8 @@
 #define _CRT_SECURE_NO_DEPRECATE // Disables "unsafe" warnings on Windows
 #define _USE_MATH_DEFINES // For M_PI on MSVC
 
+#include "ggml-quants-vlut.h"
+
 #include "ggml-backend.h"
 #include "ggml-impl.h"
 #include "ggml-threading.h"
@@ -894,6 +896,54 @@ static const struct ggml_type_traits type_traits[GGML_TYPE_COUNT] = {
         .type_size                = 0,
         .is_quantized             = false,
     },
+    [GGML_TYPE_I8_V] = {
+        .type_name                = "i8_v",
+        .blck_size                = 1,
+        .type_size                = sizeof(int8_t),
+        .is_quantized             = true,
+    },
+    [GGML_TYPE_I2_V] = {
+        .type_name                = "i2_v",
+        .blck_size                = 4,
+        .type_size                = sizeof(uint8_t),
+        .is_quantized             = true,
+    },
+    [GGML_TYPE_I2_V_2] = {
+        .type_name                = "i2_v_2",
+        .blck_size                = 4,
+        .type_size                = sizeof(uint8_t),
+        .is_quantized             = true,
+    },
+    [GGML_TYPE_I2_V_4] = {
+        .type_name                = "i2_v_4",
+        .blck_size                = 4,
+        .type_size                = sizeof(uint8_t),
+        .is_quantized             = true,
+    },
+    [GGML_TYPE_I2_V_8] = {
+        .type_name                = "i2_v_8",
+        .blck_size                = 4,
+        .type_size                = sizeof(uint8_t),
+        .is_quantized             = true,
+    },
+    [GGML_TYPE_I2_V_16] = {
+        .type_name                = "i2_v_16",
+        .blck_size                = 4,
+        .type_size                = sizeof(uint8_t),
+        .is_quantized             = true,
+    },
+    [GGML_TYPE_I1_V] = {
+        .type_name                = "i1_v",
+        .blck_size                = 5,
+        .type_size                = sizeof(uint8_t),
+        .is_quantized             = true,
+    },
+    [GGML_TYPE_I1_V_2] = {
+        .type_name                = "i1_v_2",
+        .blck_size                = 5,
+        .type_size                = sizeof(uint8_t),
+        .is_quantized             = true,
+    },
 };
 
 const struct ggml_type_traits * ggml_get_type_traits(enum ggml_type type) {
@@ -1234,6 +1284,9 @@ int64_t ggml_nrows(const struct ggml_tensor * tensor) {
 }
 
 size_t ggml_nbytes(const struct ggml_tensor * tensor) {
+    if (tensor->type == GGML_TYPE_I1_V || tensor->type == GGML_TYPE_I1_V_2 || tensor->type == GGML_TYPE_I1_V_4) {
+        return ggml_row_size(tensor->type, tensor->ne[0]) * tensor->ne[1];
+    }
     for (int i = 0; i < GGML_MAX_DIMS; ++i) {
         if (tensor->ne[i] <= 0) {
             return 0;
@@ -1249,7 +1302,7 @@ size_t ggml_nbytes(const struct ggml_tensor * tensor) {
         }
     }
     else {
-        nbytes = tensor->ne[0]*tensor->nb[0]/blck_size;
+        nbytes = (tensor->ne[0] * tensor->nb[0] + blck_size - 1)/blck_size;
         for (int i = 1; i < GGML_MAX_DIMS; ++i) {
             nbytes += (tensor->ne[i] - 1)*tensor->nb[i];
         }
@@ -1271,6 +1324,14 @@ size_t ggml_type_size(enum ggml_type type) {
 }
 
 size_t ggml_row_size(enum ggml_type type, int64_t ne) {
+    if (type == GGML_TYPE_I8_V) {
+        return sizeof(int8_t) * ne + sizeof(float);
+    } else if (type == GGML_TYPE_I1_V || type == GGML_TYPE_I1_V_2 || type == GGML_TYPE_I1_V_4) {
+        assert(ne % 4 == 0);
+        int64_t blck_num = ne / 20 * 4;
+        int64_t blck_remain = ne % 20 / 4;
+        return sizeof(uint8_t) * (blck_num + blck_remain);
+    }
     assert(ne % ggml_blck_size(type) == 0);
     return ggml_type_size(type)*ne/ggml_blck_size(type);
 }
@@ -7555,6 +7616,36 @@ size_t ggml_quantize_chunk(
                 result = n * elemsize;
                 memcpy((uint8_t *)dst + start * elemsize, src + start, result);
             } break;
+         // Vec-LUT types
+        case GGML_TYPE_I2_V:
+            result = quantize_i2_v(src + start, (char *)dst + start_row * row_size, nrows, n_per_row, imatrix);
+            break;
+        case GGML_TYPE_I2_V_2:
+            // TODO
+            // printf("WARNING: GGML_TYPE_I2_V_2 quantization not implemented yet, using fallback. This will not affect test-vlut-gemm.\n");
+            result = quantize_i2_v(src + start, (char *)dst + start_row * row_size, nrows, n_per_row, imatrix);
+            break;
+        case GGML_TYPE_I2_V_4:
+            result = quantize_i2_v_4(src + start, (char *)dst + start_row * row_size, nrows, n_per_row, imatrix);
+            break;
+        case GGML_TYPE_I2_V_8:
+            result = quantize_i2_v_8(src + start, (char *)dst + start_row * row_size, nrows, n_per_row, imatrix);
+            break;
+        case GGML_TYPE_I2_V_16:
+            // TODO
+            // printf("WARNING: GGML_TYPE_I2_V_16 quantization not implemented yet, using fallback. This will not affect test-vlut-gemm.\n");
+            result = quantize_i2_v(src + start, (char *)dst + start_row * row_size, nrows, n_per_row, imatrix);
+            break;
+        case GGML_TYPE_I1_V:
+            result = quantize_i1_v(src + start, (char *)dst + start_row * row_size, nrows, n_per_row, imatrix);
+            break;
+        case GGML_TYPE_I1_V_2:
+            result = quantize_i1_v_2(src + start, (char *)dst + start_row * row_size, nrows, n_per_row, imatrix);
+            break;
+        case GGML_TYPE_I1_V_4:
+            // TODO
+            // printf("WARNING: GGML_TYPE_I1_V_4 quantization not implemented yet, using fallback. This will not affect test-vlut-gemm.\n");
+            result = quantize_i1_v(src + start, (char *)dst + start_row * row_size, nrows, n_per_row, imatrix);
         default:
             assert(false);
     }
