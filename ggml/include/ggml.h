@@ -421,8 +421,20 @@ extern "C" {
         // GGML_TYPE_IQ4_NL_4_4 = 36,
         // GGML_TYPE_IQ4_NL_4_8 = 37,
         // GGML_TYPE_IQ4_NL_8_8 = 38,
-        GGML_TYPE_MXFP4   = 39, // MXFP4 (1 block)
-        GGML_TYPE_COUNT   = 40,
+        
+        // Vec-LUT types
+        GGML_TYPE_I8_V = 39,
+        GGML_TYPE_I2_V = 40,
+        GGML_TYPE_I2_V_2 = 41,
+        GGML_TYPE_I2_V_4 = 42,
+        GGML_TYPE_I2_V_8 = 43,
+        GGML_TYPE_I2_V_16 = 44,
+        GGML_TYPE_I1_V = 45,
+        GGML_TYPE_I1_V_2 = 46,
+        GGML_TYPE_I1_V_4 = 47,
+        
+        GGML_TYPE_MXFP4   = 48, // MXFP4 (1 block)
+        GGML_TYPE_COUNT   = 49,
     };
 
     // precision
