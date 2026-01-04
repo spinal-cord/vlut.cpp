@@ -109,10 +109,10 @@ llm_build_llama<embed>::llm_build_llama(const llama_model & model, const llm_gra
             cb(cur, "ffn_norm", il);
 
             cur = build_ffn(cur,
-                    model.layers[il].ffn_up,   model.layers[il].ffn_up_b,   NULL,
-                    model.layers[il].ffn_gate, model.layers[il].ffn_gate_b, NULL,
-                    model.layers[il].ffn_down, model.layers[il].ffn_down_b, NULL,
-                    NULL,
+                        model.layers[il].ffn_up,   model.layers[il].ffn_up_b,   model.layers[il].ffn_up_scale,
+                        model.layers[il].ffn_gate, model.layers[il].ffn_gate_b, model.layers[il].ffn_gate_scale,
+                        model.layers[il].ffn_down, model.layers[il].ffn_down_b, model.layers[il].ffn_down_scale,
+                        NULL,
                     LLM_FFN_SILU, LLM_FFN_PAR, il);
             cb(cur, "ffn_out", il);
         } else {
