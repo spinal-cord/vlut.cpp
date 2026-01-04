@@ -1,6 +1,8 @@
 #define _CRT_SECURE_NO_DEPRECATE // Disables "unsafe" warnings on Windows
 #define _USE_MATH_DEFINES // For M_PI on MSVC
 
+#include "ggml-cpu-quants-vlut.h"
+
 #include "ggml-backend-impl.h"
 #include "ggml-backend.h"
 #include "traits.h"
@@ -383,6 +385,42 @@ static const struct ggml_type_traits_cpu type_traits_cpu[GGML_TYPE_COUNT] = {
     },
     [GGML_TYPE_I32] = {
         .from_float               = (ggml_from_float_t) ggml_cpu_fp32_to_i32,
+    },
+    [GGML_TYPE_I8_V] = {
+        .from_float               = quantize_row_i8_v  // UNUSED
+    },
+    // TODO: support .vecdot for Vec-LUT types
+    [GGML_TYPE_I2_V] = {
+        .vec_dot_type             = GGML_TYPE_I8_V,
+        .nrows                    = 1,
+    },
+    [GGML_TYPE_I2_V_2] = {
+        .vec_dot_type             = GGML_TYPE_I8_V,
+        .nrows                    = 1,
+    },
+    [GGML_TYPE_I2_V_4] = {
+        .vec_dot_type             = GGML_TYPE_I8_V,
+        .nrows                    = 1,
+    },
+    [GGML_TYPE_I2_V_8] = {
+        .vec_dot_type             = GGML_TYPE_I8_V,
+        .nrows                    = 1,
+    },
+    [GGML_TYPE_I2_V_16] = {
+        .vec_dot_type             = GGML_TYPE_I8_V,
+        .nrows                    = 1,
+    },
+    [GGML_TYPE_I1_V] = {
+        .vec_dot_type             = GGML_TYPE_I8_V,
+        .nrows                    = 1,
+    },
+    [GGML_TYPE_I1_V_2] = {
+        .vec_dot_type             = GGML_TYPE_I8_V,
+        .nrows                    = 1,
+    },
+    [GGML_TYPE_I1_V_4] = {
+        .vec_dot_type             = GGML_TYPE_I8_V,
+        .nrows                    = 1,
     },
 };
 
@@ -1131,6 +1169,77 @@ void ggml_set_f32_nd(const struct ggml_tensor * tensor, int i0, int i1, int i2, 
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// Vec-LUT traits
+typedef void (*vlut_gemm)(int ith, int nth, int n, float* GGML_RESTRICT s, size_t bs, const void* GGML_RESTRICT vx, const void* GGML_RESTRICT vy, int nr, int nc);
+
+struct ggml_type_traits_vlut {
+    bool is_vlut_type;
+    int64_t table_entries_num;
+    int64_t tile_size;
+    vlut_gemm gemm;
+};
+
+static const struct ggml_type_traits_vlut type_traits_vlut[GGML_TYPE_COUNT] = {
+    [GGML_TYPE_I2_V] =
+        {
+            .is_vlut_type = true,
+            .table_entries_num = 81,
+            .tile_size = 1,
+            .gemm = ggml_gemm_i2v_i8v_lut,
+        },
+    [GGML_TYPE_I2_V_2] =
+        {
+            .is_vlut_type = true,
+            .table_entries_num = 81,
+            .tile_size = 2,
+            .gemm = ggml_gemm_i2v2_i8v_lut,
+        },
+    [GGML_TYPE_I2_V_4] =
+        {
+            .is_vlut_type = true,
+            .table_entries_num = 81,
+            .tile_size = 4,
+            .gemm = ggml_gemm_i2v4_i8v_lut,
+        },
+    [GGML_TYPE_I2_V_8] =
+        {
+            .is_vlut_type = true,
+            .table_entries_num = 81,
+            .tile_size = 8,
+            .gemm = ggml_gemm_i2v8_i8v_lut,
+        },
+    [GGML_TYPE_I2_V_16] =
+        {
+            .is_vlut_type = true,
+            .table_entries_num = 81,
+            .tile_size = 16,
+            .gemm = ggml_gemm_i2v16_i8v_lut,
+        },
+    [GGML_TYPE_I1_V] =
+        {
+            .is_vlut_type = true,
+            .table_entries_num = 243,
+            .tile_size = 1,
+            .gemm = ggml_gemm_i1v_i8v_lut,
+        },
+    [GGML_TYPE_I1_V_2] =
+        {
+            .is_vlut_type = true,
+            .table_entries_num = 243,
+            .tile_size = 2,
+            .gemm = ggml_gemm_i1v2_i8v_lut,
+        },
+    [GGML_TYPE_I1_V_4] =
+        {
+            .is_vlut_type = true,
+            .table_entries_num = 243,
+            .tile_size = 4,
+            .gemm = ggml_gemm_i1v4_i8v_lut,
+        },
+};
+// Vec-LUT traits end
+
+
 // ggml_compute_forward_mul_mat
 
 static void ggml_compute_forward_mul_mat_one_chunk(
@@ -1235,9 +1344,10 @@ void ggml_compute_forward_mul_mat(
     const int ith = params->ith;
     const int nth = params->nth;
 
-    enum ggml_type           const vec_dot_type         = type_traits_cpu[src0->type].vec_dot_type;
+    enum ggml_type const type = src0->type;
+    enum ggml_type           const vec_dot_type         = type_traits_cpu[type].vec_dot_type;
     ggml_from_float_t        const from_float           = type_traits_cpu[vec_dot_type].from_float;
-    int64_t                  const vec_dot_num_rows     = type_traits_cpu[src0->type].nrows;
+    int64_t                  const vec_dot_num_rows     = type_traits_cpu[type].nrows;
 
     GGML_ASSERT(ne0 == ne01);
     GGML_ASSERT(ne1 == ne11);
@@ -1245,7 +1355,7 @@ void ggml_compute_forward_mul_mat(
     GGML_ASSERT(ne3 == ne13);
 
     // we don't support permuted src0 or src1
-    GGML_ASSERT(nb00 == ggml_type_size(src0->type));
+    GGML_ASSERT(nb00 == ggml_type_size(type));
     GGML_ASSERT(nb10 == ggml_type_size(src1->type));
 
     // dst cannot be transposed or permuted
@@ -1256,6 +1366,59 @@ void ggml_compute_forward_mul_mat(
 
     // nb01 >= nb00 - src0 is not transposed
     //   compute by src0 rows
+
+
+
+    // All Vec-LUT GeMM codes here
+    // Currently use LUT for all GeMM/GeMV with Vec-LUT weights
+    // TODO: use LUT only for large GeMM, and add a GeMV fallback
+    const int gemm_lim = 0;
+    bool vlut_mulmat = type_traits_vlut[type].is_vlut_type && (ne11 > gemm_lim);
+    
+    if (vlut_mulmat) {
+        // Get gemm kernel from type_traits
+        vlut_gemm gemm = type_traits_vlut[type].gemm;
+        assert(gemm);
+        int64_t tile_size = type_traits_vlut[type].tile_size;
+
+        // Quantize activation (src1)
+        GGML_ASSERT(src1->type == GGML_TYPE_F32);
+        assert(src1->type != vec_dot_type); // vec_dot_type is int8
+
+        char *wdata = params->wdata;
+        const size_t nbw1 = ggml_row_size(vec_dot_type, ne10);
+        const size_t nbw2 = nbw1 * ne11;
+        const size_t nbw3 = nbw2 * ne12;
+
+        assert(params->wsize >= ne13 * nbw3);
+        assert(ggml_n_dims(src0) == 2);
+
+        for (int64_t i13 = 0; i13 < ne13; ++i13) {
+            for (int64_t i12 = 0; i12 < ne12; ++i12) {
+                const size_t wdata_size = ((ne11 % TABLE_ENTRY_SIZE) ? ne11 + TABLE_ENTRY_SIZE - (ne11 % TABLE_ENTRY_SIZE): ne11) * ne10;
+                float *scale = (float *)(wdata + wdata_size);
+                for (int64_t i11 = ith; i11 < ne11; i11 += nth) {
+                    int64_t i = i11 / TABLE_ENTRY_SIZE;
+                    int64_t j = i11 % TABLE_ENTRY_SIZE;
+                    quantize_row_i8_v_tile((float *)((char *)src1->data + i13 * nb13 + i12 * nb12 + i11 * nb11),
+                                           (void *)(wdata + i * TABLE_ENTRY_SIZE + j), ne10, scale + i11);
+                }
+            }
+        }
+        
+        ggml_barrier(params->threadpool);
+
+        const int8_t * src1_wdata = (src1->type == vec_dot_type) ? src1->data : params->wdata;
+
+        int64_t src0_start = (ith * ne01) / nth;
+        int64_t src0_end = ((ith + 1) * ne01) / nth;
+
+        if (src0_start < src0_end) {
+            gemm(params->ith, params->nth, ne00, ((float *)(dst->data)) + src0_start, ne01,
+                 (const char *)src0->data + src0_start * tile_size, src1_wdata, ne11, src0_end - src0_start);
+        }
+        return;
+    } // vlut_mulmat
 
     // TODO: extract to "extra_op"
 #if GGML_USE_LLAMAFILE
@@ -1269,14 +1432,14 @@ void ggml_compute_forward_mul_mat(
         for (int64_t i13 = 0; i13 < ne13; i13++)
             for (int64_t i12 = 0; i12 < ne12; i12++)
                 if (!llamafile_sgemm(params,
-                                     ne01, ne11, ne00/ggml_blck_size(src0->type),
+                                     ne01, ne11, ne00/ggml_blck_size(type),
                                      (const char *)src0->data + i12/r2*nb02 + i13/r3*nb03,
-                                     nb01/ggml_type_size(src0->type),
+                                     nb01/ggml_type_size(type),
                                      (const char *)src1->data + i12*nb12 + i13*nb13,
                                      nb11/ggml_type_size(src1->type),
                                      (char *)dst->data + i12*nb2 + i13*nb3,
                                      nb1/ggml_type_size(dst->type),
-                                     src0->type,
+                                     type,
                                      src1->type,
                                      dst->type))
                     goto UseGgmlGemm1;
@@ -1337,14 +1500,14 @@ UseGgmlGemm1:;
         for (int64_t i13 = 0; i13 < ne13; i13++)
             for (int64_t i12 = 0; i12 < ne12; i12++)
                 if (!llamafile_sgemm(params,
-                                     ne01, ne11, ne00/ggml_blck_size(src0->type),
+                                     ne01, ne11, ne00/ggml_blck_size(type),
                                      (const char *)src0->data + i12/r2*nb02 + i13/r3*nb03,
-                                     nb01/ggml_type_size(src0->type),
+                                     nb01/ggml_type_size(type),
                                      (const char *)wdata + (i12*ne11 + i13*ne12*ne11)*row_size,
                                      row_size/ggml_type_size(vec_dot_type),
                                      (char *)dst->data + i12*nb2 + i13*nb3,
                                      nb1/ggml_type_size(dst->type),
-                                     src0->type,
+                                     type,
                                      vec_dot_type,
                                      dst->type))
                     goto UseGgmlGemm2;
@@ -1407,7 +1570,7 @@ UseGgmlGemm2:;
         if ((nr0 % 2 != 0) || (ne11 % 2 != 0) || ((ir0_end - ir0_start) % 2 != 0) || ((ir1_end - ir1_start) % 2 != 0)) {
             num_rows_per_vec_dot = 1;
         }
-        ggml_compute_forward_mul_mat_one_chunk(params, dst, src0->type, num_rows_per_vec_dot, ir0_start, ir0_end, ir1_start, ir1_end);
+        ggml_compute_forward_mul_mat_one_chunk(params, dst, type, num_rows_per_vec_dot, ir0_start, ir0_end, ir1_start, ir1_end);
 
         if (nth >= nchunk0 * nchunk1) {
             break;
@@ -2907,6 +3070,11 @@ struct ggml_cplan ggml_graph_plan(
     if (work_size > 0) {
         work_size += CACHE_LINE_SIZE*(n_threads);
     }
+
+    // Allocate additional work size for Vec-LUT
+    work_size += TABLE_ENTRY_SIZE * 15000 * sizeof(int8_t);
+    const size_t MAX_INPUT_LENGTH = 2048;
+    work_size += MAX_INPUT_LENGTH * sizeof(float);
 
     cplan.threadpool = threadpool;
     cplan.n_threads  = MIN(max_tasks, n_threads);
